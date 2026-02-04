@@ -9,7 +9,7 @@ const API_KEY = ""; // যদি প্রয়োজন হয়
 // ================== Step 1: Search ==================
 Module({
   command: "xvideo",
-  package: "video",
+  package: "downloader",
   description: "Search XVideos and download",
 })(async (message, match) => {
   try {
