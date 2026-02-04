@@ -4,7 +4,7 @@ import { Module } from "../lib/plugins.js";
 
 Module({
   command: "play",
-  package: "youtube",
+  package: "downloader",
   description: "Play song from YouTube (API based)",
 })(async (message, match) => {
   try {
