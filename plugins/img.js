@@ -3,7 +3,7 @@ import { Module } from '../lib/plugins.js';
 
 Module({
   command: "img",
-  package: "search",
+  package: "downloader",
   description: "Search and download original quality images from Google",
 })(async (message, match) => {
   if (!match) {
