@@ -4,7 +4,7 @@ import config from '../config.js';
 
 Module({
   command: 'take',
-  package: 'media',
+  package: 'tools',
   description: 'Change sticker packname and author'
 })(async (message, match) => {
   let mediaa = message.quoted || message;
@@ -21,7 +21,7 @@ Module({
 
 Module({
   command: 'sticker',
-  package: 'media',
+  package: 'tools',
   description: 'Convert stk'
 })(async (message) => {
   let mediaa = message.quoted || message;
@@ -37,7 +37,7 @@ Module({
 
 Module({
   command: 's',
-  package: 'media',
+  package: 'tools',
   description: 'Convert stk'
 })(async (message) => {
   let mediaa = message.quoted || message;
@@ -52,7 +52,7 @@ Module({
 });
 Module({
   command: 'vs',
-  package: 'media',
+  package: 'tools',
   description: 'Convert stk'
 })(async (message) => {
   let mediaa = message.quoted || message;
