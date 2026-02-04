@@ -3,7 +3,7 @@ import fetch from 'node-fetch';
 
 Module({
   command: 'wiki',
-  package: 'search',
+  package: 'general',
   description: 'Search Wikipedia and get a summary',
 })(async (message, match) => {
   if (!match) return message.send('_Please provide a search query_');
