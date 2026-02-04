@@ -305,7 +305,7 @@ const detectAndConvertMedia = async (quoted, match = "") => {
 
 Module({
   command: "toimage",
-  package: "media",
+  package: "tools",
   aliases: ["toimg", "convert", "sticker2img", "video2img"],
   description: "Convert stickers, videos, documents to images",
   usage: `.toimage [options]\n\nOptions:\n- .toimage (reply to sticker/video/doc)\n- .toimage filter <filter_name>\n- .toimage resize <width>x<height>\n- .toimage quality <high|medium|low>\n- .toimage frame <timestamp>`,
@@ -377,7 +377,7 @@ Module({
 
 Module({
   command: "imageinfo",
-  package: "media",
+  package: "tools",
   aliases: ["imginfo"],
   description: "Get information about media files",
   usage: ".imageinfo (reply to any media)",
@@ -433,7 +433,7 @@ Use .toimage to convert to JPEG format
 
 Module({
   command: "sticker2img",
-  package: "media",
+  package: "tools",
   description: "Quick convert sticker to image",
   usage: ".sticker2img (reply to sticker)",
 })(async (message) => {
@@ -454,7 +454,7 @@ Module({
 
 Module({
   command: "video2img",
-  package: "media",
+  package: "tools",
   description: "Quick convert video to image frame",
   usage: ".video2img (reply to video)",
 })(async (message) => {
@@ -477,7 +477,7 @@ Module({
 
 Module({
   command: "imagehelp",
-  package: "media",
+  package: "tools",
   aliases: ["imghelp"],
   description: "Show image conversion help",
 })(async (message) => {
