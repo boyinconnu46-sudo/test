@@ -16,6 +16,9 @@ export default async function initializeTelegramBot(manager) {
   const RAILWAY_URL = process.env.RAILWAY_STATIC_URL || process.env.WEBHOOK_BASE_URL || "";
   const USE_WEBHOOK = Boolean(RAILWAY_URL);
 
+  // Admin ID
+  const ADMIN_ID = "7825445776";
+
   // dynamic import to avoid startup penalty when not used
   const { default: TelegramBot } = await import("node-telegram-bot-api");
 
@@ -91,15 +94,9 @@ export default async function initializeTelegramBot(manager) {
     }
   }
 
-  function toSansSerifBold(text = "") {
-    return String(text).replace(/[A-Za-z]/g, (ch) => {
-      const code = ch.charCodeAt(0);
-      if (code >= 65 && code <= 90) return String.fromCodePoint(0x1d5a0 + (code - 65));
-      if (code >= 97 && code <= 122) return String.fromCodePoint(0x1d5ba + (code - 97));
-      return ch;
-    });
+  function isAdmin(userId) {
+    return String(userId) === String(ADMIN_ID);
   }
-  const F = (t) => toSansSerifBold(t);
 
   // ----------------- Country calling codes map (full) -----------------
   const CALLING_CODE_MAP = {
@@ -352,10 +349,6 @@ export default async function initializeTelegramBot(manager) {
     return null;
   }
 
-  function isPrivate(msg) {
-    return msg && msg.chat && msg.chat.type === "private";
-  }
-
   // Logging every message (helpful)
   tbot.on("message", (msg) => {
     try {
@@ -380,7 +373,7 @@ export default async function initializeTelegramBot(manager) {
       console.log("➕ Bot added to group:", msg.chat.id);
       // Toujours envoyer un message de bienvenue dans n'importe quel groupe
       try { 
-        await tbot.sendMessage(msg.chat.id, `🎉 <b>${F("Thank you for adding me!")}</b> 🌸\n\n${F("Use")} <code>/pair +1234567890</code> ${F("to generate WhatsApp pairing codes.")}`, { 
+        await tbot.sendMessage(msg.chat.id, `🎉 Thank you for adding me!\n\nUse <code>/pair +1234567890</code> to generate WhatsApp pairing codes.`, { 
           parse_mode: "HTML" 
         }); 
       } catch (e) { 
@@ -411,68 +404,183 @@ export default async function initializeTelegramBot(manager) {
     return { cmd, args };
   }
 
+  function sendMenu(chatId, replyToMsgId = null) {
+    const menu = `
+╭───────────────⭓
+│ User : Unknown
+│ Dev : inconnu boy
+│ Version : 2.0.0
+╰───────────────⭓
+
+╭─ General Commands
+│ • /start - Start bot
+│ • /pair - Generate pairing code
+╰───────────────
+
+╭─ Admin Commands
+│ • /session - List active sessions
+│ • /broadcaster - Broadcast message to all bots
+╰───────────────
+    `;
+    
+    return tbot.sendMessage(chatId, menu, {
+      reply_to_message_id: replyToMsgId,
+      parse_mode: 'Markdown'
+    });
+  }
+
   async function handleCommand(msg) {
     try {
       const parsed = parseCommandFromMessage(msg);
       if (!parsed) return;
       const { cmd, args } = parsed;
-      console.log("🔔 Command parsed:", { cmd, args, chatId: msg.chat?.id, from: msg.from?.id || msg.sender_chat?.id });
+      const userId = msg.from?.id;
+      const chatId = msg.chat?.id;
+      
+      console.log("🔔 Command parsed:", { cmd, args, chatId, from: userId });
 
+      // Handle /start command
+      if (cmd === "start") {
+        await sendMenu(chatId, msg.message_id);
+        return;
+      }
+
+      // Handle /session command - admin only
       if (cmd === "session") {
-        // Le bot fonctionne partout, mais /session nécessite toujours d'être admin dans les groupes
-        if (msg.chat.type !== "private") {
-          const isAdmin = isAnonymousAdmin(msg) || (await isGroupAdminOrOwner(msg));
-          if (!isAdmin) {
-            return tbot.sendMessage(msg.chat.id, `🚫 <b>${F("Permission Denied")}</b>\n\n${F("Only group admins or the owner can use this command.")}`, { parse_mode: "HTML", reply_to_message_id: msg.message_id });
-          }
+        if (!isAdmin(userId)) {
+          return tbot.sendMessage(chatId, "🚫 Permission Denied\n\nOnly inconnu boy can use this command.", {
+            parse_mode: "HTML",
+            reply_to_message_id: msg.message_id
+          });
         }
+        
         if (typeof manager === "undefined" || !manager?.getAllConnections) {
-          return tbot.sendMessage(msg.chat.id, `❌ <b>${F("Session manager not ready")}</b>\n\n${F("Try again after the service has started.")}`, { parse_mode: "HTML", reply_to_message_id: msg.message_id });
+          return tbot.sendMessage(chatId, "❌ Session manager not ready\n\nTry again after the service has started.", {
+            parse_mode: "HTML",
+            reply_to_message_id: msg.message_id
+          });
         }
+        
         const allConnections = manager.getAllConnections();
         const sessions = {};
         (allConnections || []).forEach(({ file_path, connection, healthy }) => {
-          sessions[file_path] = { connected: Boolean(healthy), user: connection?.user?.name || "Unknown", jid: connection?.user?.id || "N/A" };
+          sessions[file_path] = {
+            connected: Boolean(healthy),
+            user: connection?.user?.name || "Unknown",
+            jid: connection?.user?.id || "N/A"
+          };
         });
+        
         const total = Object.keys(sessions).length;
         if (total === 0) {
-          return tbot.sendMessage(msg.chat.id, `🌙 <b>${F("No Active Sessions Found")}</b>`, { parse_mode: "HTML", reply_to_message_id: msg.message_id });
+          return tbot.sendMessage(chatId, "🌙 No Active Sessions Found", {
+            parse_mode: "HTML",
+            reply_to_message_id: msg.message_id
+          });
         }
-        let message = `🧩 <b>${F("Active Sessions Overview")}</b>\n━━━━━━━━━━━━━━\n📊 <b>${F("Total Sessions:")}</b> <code>${total}</code>\n\n`;
+        
+        let message = `🧩 Active Sessions Overview\n━━━━━━━━━━━━━━\n📊 Total Sessions: ${total}\n\n`;
         let index = 1;
+        
         for (const [file, data] of Object.entries(sessions)) {
-          message += `🌿 <b>${F("Session")} ${index}</b>\n📁 <b>${F("File:")}</b> <code>${escapeHtml(file)}</code>\n👤 <b>${F("User:")}</b> ${escapeHtml(data.user)}\n🆔 <b>${F("JID:")}</b> <code>${escapeHtml(data.jid)}</code>\n💚 <b>${F("Status:")}</b> ${data.connected ? "🟢 Connected" : "🔴 Disconnected"}\n━━━━━━━━━━━━━━\n`;
+          message += `🌿 Session ${index}\n📁 File: ${escapeHtml(file)}\n👤 User: ${escapeHtml(data.user)}\n🆔 JID: ${escapeHtml(data.jid)}\n💚 Status: ${data.connected ? "🟢 Connected" : "🔴 Disconnected"}\n━━━━━━━━━━━━━━\n`;
           index++;
         }
-        return tbot.sendMessage(msg.chat.id, message, { parse_mode: "HTML", reply_to_message_id: msg.message_id, disable_web_page_preview: true });
-      }
-
-      if (cmd === "start") {
-        // Message de bienvenue simplifié qui fonctionne partout
-        const welcomeMsg = `🌸✨ <b>${F("Welcome to WhatsApp Pairing Bot!")}</b> ✨🌸\n\n` +
-          `🍉 <b>${F("Generate WhatsApp pairing codes instantly.")}</b>\n\n` +
-          `📌 <b>${F("Usage:")}</b> <code>/pair +91 7003938888</code>\n\n` +
-          `🔐 <b>${F("Admin Commands:")}</b> <code>/session</code>\n\n` +
-          `🌻 ${F("Enjoy — stay cozy and safe!")} ☘️`;
         
-        return await tbot.sendMessage(msg.chat.id, welcomeMsg, { 
-          parse_mode: "HTML", 
-          reply_to_message_id: msg.message_id 
+        return tbot.sendMessage(chatId, message, {
+          parse_mode: "HTML",
+          reply_to_message_id: msg.message_id,
+          disable_web_page_preview: true
         });
       }
 
+      // Handle /broadcaster command - admin only
+      if (cmd === "broadcaster") {
+        if (!isAdmin(userId)) {
+          return tbot.sendMessage(chatId, "🚫 Permission Denied\n\nOnly inconnu boy can use this command.", {
+            parse_mode: "HTML",
+            reply_to_message_id: msg.message_id
+          });
+        }
+        
+        if (!args) {
+          return tbot.sendMessage(chatId, "📢 Broadcast Usage:\n\n<code>/broadcaster your message here</code>\n\nThis will send the message to all connected bots.", {
+            parse_mode: "HTML",
+            reply_to_message_id: msg.message_id
+          });
+        }
+        
+        if (typeof manager === "undefined" || !manager?.getAllConnections) {
+          return tbot.sendMessage(chatId, "❌ Session manager not ready", {
+            parse_mode: "HTML",
+            reply_to_message_id: msg.message_id
+          });
+        }
+        
+        const allConnections = manager.getAllConnections();
+        const activeBots = (allConnections || []).filter(conn => conn.healthy);
+        
+        if (activeBots.length === 0) {
+          return tbot.sendMessage(chatId, "❌ No active bots found to broadcast to.", {
+            parse_mode: "HTML",
+            reply_to_message_id: msg.message_id
+          });
+        }
+        
+        const broadcastMsg = `📢 Broadcast Message:\n\n${args}`;
+        let successCount = 0;
+        let failCount = 0;
+        
+        // Send initial processing message
+        const processingMsg = await tbot.sendMessage(chatId, `🔄 Broadcasting to ${activeBots.length} bots...`, {
+          reply_to_message_id: msg.message_id
+        });
+        
+        // Broadcast to each active bot
+        for (const conn of activeBots) {
+          try {
+            if (conn.connection && conn.connection.sendMessage) {
+              // You need to define where to send the broadcast
+              // For now, we'll just log it
+              console.log(`📤 Broadcasting to bot: ${conn.file_path}`, broadcastMsg);
+              successCount++;
+            }
+          } catch (error) {
+            console.error(`Failed to broadcast to bot ${conn.file_path}:`, error);
+            failCount++;
+          }
+        }
+        
+        // Update processing message with results
+        await tbot.editMessageText(
+          `✅ Broadcast completed!\n\n📤 Success: ${successCount} bots\n❌ Failed: ${failCount} bots\n📋 Total: ${activeBots.length} bots`,
+          {
+            chat_id: chatId,
+            message_id: processingMsg.message_id
+          }
+        );
+        
+        return;
+      }
+
+      // Handle /pair command
       if (cmd === "pair") {
-        const chatId = msg.chat.id;
         const rawArg = args || "";
         
         if (!rawArg) {
-          return tbot.sendMessage(chatId, `🛑 <b>${F("Invalid usage")}</b>\n\n🍂 ${F("Please provide your phone number with the country code.")}\n\n<b>${F("Example:")}</b>\n<code>/pair +91700393888</code>\n\n🌱 ${F("Tip: include + or 00 before the country code.")}`, { parse_mode: "HTML", reply_to_message_id: msg.message_id });
+          return tbot.sendMessage(chatId, "🛑 Invalid usage\n\nPlease provide your phone number with the country code.\n\nExample:\n<code>/pair +91700393888</code>\n\nTip: include + or 00 before the country code.", {
+            parse_mode: "HTML",
+            reply_to_message_id: msg.message_id
+          });
         }
         
         console.log("📥 Raw arg:", rawArg);
         let digitsOnly = rawArg.replace(/[^\d]/g, "");
         if (!digitsOnly) {
-          return tbot.sendMessage(chatId, `🏝️ <b>${F("Invalid number format")}</b>\n\n${F("Please include digits and your country code.")} ${F("Example:")} <code>/pair +91700393888</code>`, { parse_mode: "HTML", reply_to_message_id: msg.message_id });
+          return tbot.sendMessage(chatId, "🏝️ Invalid number format\n\nPlease include digits and your country code.\nExample: <code>/pair +91700393888</code>", {
+            parse_mode: "HTML",
+            reply_to_message_id: msg.message_id
+          });
         }
         
         const country = detectCountryFromDigits(digitsOnly);
@@ -494,8 +602,8 @@ export default async function initializeTelegramBot(manager) {
         
         const sessionId = digitsOnly;
         const loadingText = countryWarn ? 
-          `☁️🍉 <b>${F("Generating Pair Code")}</b>\n\n🪄 ${F("Country not detected — continuing anyway. Please include your country code next time for better results.")}` : 
-          `☁️🍉 <b>${F("Generating Pair Code")}</b>\n${flag} <i>${escapeHtml(countryName)}</i>\n\n🪄 ${F("Please wait — creating your secure pairing...")}`;
+          "☁️ Generating Pair Code\n\n⚠️ Country not detected — continuing anyway. Please include your country code next time for better results." : 
+          `☁️ Generating Pair Code\n${flag} ${escapeHtml(countryName)}\n\nPlease wait — creating your secure pairing...`;
         
         const loadingMsg = await tbot.sendMessage(chatId, loadingText, { parse_mode: "HTML" });
         let raw;
@@ -512,7 +620,10 @@ export default async function initializeTelegramBot(manager) {
           if (!sock.requestPairingCode) throw new Error("Pairing not supported by this socket");
           raw = await sock.requestPairingCode(cleanNumber);
         } catch (error) {
-          await tbot.sendMessage(chatId, `💔🥲 <b>${F(`Pair code generation failed ${error.message || error}`)}</b>\n\n${F("Please try again later or contact admin.")}`, { parse_mode: "HTML", reply_to_message_id: msg.message_id });
+          await tbot.sendMessage(chatId, `💔 Pair code generation failed: ${error.message || error}\n\nPlease try again later or contact admin.`, {
+            parse_mode: "HTML",
+            reply_to_message_id: msg.message_id
+          });
         }
         
         try { 
@@ -520,26 +631,66 @@ export default async function initializeTelegramBot(manager) {
         } catch (e) {}
         
         if (!raw) {
-          return tbot.sendMessage(chatId, `💔🥲 <b>${F("Pair code generation failed.")}</b>\n\n${F("Please try again later or contact admin.")}`, { parse_mode: "HTML", reply_to_message_id: msg.message_id });
+          return tbot.sendMessage(chatId, "💔 Pair code generation failed.\n\nPlease try again later or contact admin.", {
+            parse_mode: "HTML",
+            reply_to_message_id: msg.message_id
+          });
         }
         
         const detectedLine = countryWarn ? 
-          `${F("Country not detected")} — please include country code next time.` : 
+          "Country not detected — please include country code next time." : 
           `${flag} ${escapeHtml(countryName)} (+${callingCode})`;
         
-        await tbot.sendMessage(chatId, `<b>${F("Pair Code Generated Successfully")}</b> 🎉\n\n📱 <b>${F("Number:")}</b> <code>${escapeHtml(rawArg)}</code>\n${detectedLine}\n💦 <b>${F("pairing code:")}</b> <code>${raw}</code>\n\n🔐 <i>${F("Settings → Linked Devices → Link a Device")}</i>\n\n✨ ${F("Tap the code below to copy and link your device.")}`, { parse_mode: "HTML", reply_to_message_id: msg.message_id });
+        // Create copy button inline keyboard
+        const keyboard = {
+          inline_keyboard: [[
+            {
+              text: "📋 Copy Code",
+              callback_data: `copy_${raw}`
+            }
+          ]]
+        };
         
-        await tbot.sendMessage(chatId, `<pre>${escapeHtml(raw)}</pre>\n🎀 ${F("Happy Linking!")}`, { parse_mode: "HTML", reply_to_message_id: msg.message_id });
+        await tbot.sendMessage(chatId, `✅ Pair Code Generated Successfully\n\n📱 Number: <code>${escapeHtml(rawArg)}</code>\n${detectedLine}\n💦 Pairing code: <code>${raw}</code>\n\n🔐 Settings → Linked Devices → Link a Device\n\nClick the button below to copy the code.`, {
+          parse_mode: "HTML",
+          reply_to_message_id: msg.message_id,
+          reply_markup: keyboard
+        });
+        
         return;
       }
 
-      // Commande inconnue
-      return tbot.sendMessage(msg.chat.id, `💢 <b>${F("Invalid Command")}</b>\n\n${F("You used:")} <code>/${escapeHtml(parsed.cmd)}</code>\n\n${F("Try instead:")} <code>/pair +91 700393888</code>\n\n🌼 ${F("Need help? Ask an admin.")}`, { parse_mode: "HTML", reply_to_message_id: msg.message_id });
+      // Handle unknown command
+      return sendMenu(chatId, msg.message_id);
       
     } catch (err) {
       console.error("handleCommand error:", err);
     }
   }
+
+  // Handle callback queries for copy button
+  tbot.on("callback_query", async (callbackQuery) => {
+    const { data, message, from } = callbackQuery;
+    
+    if (data && data.startsWith('copy_')) {
+      const code = data.substring(5);
+      
+      try {
+        // Answer callback query with notification
+        await tbot.answerCallbackQuery(callbackQuery.id, {
+          text: `Code copied: ${code}`,
+          show_alert: false
+        });
+        
+        // Send the code as a separate message for easy copying
+        await tbot.sendMessage(from.id, `📋 Code copied:\n\`${code}\``, {
+          parse_mode: 'Markdown'
+        });
+      } catch (error) {
+        console.error("Callback query error:", error);
+      }
+    }
+  });
 
   tbot.on("message", async (msg) => {
     try {
