@@ -5,7 +5,7 @@ import config from '../config.js';
 
 Module({
   command: 'emojimix',
-  package: 'media',
+  package: 'fun',
   description: 'Combine 2 emojis'
 })(async (message, match) => {
   const [emoji1, emoji2] = match?.split(' ') || [];
