@@ -9,7 +9,7 @@ import { Module } from '../lib/plugins.js';
 
 Module({
   command: "url",
-  package: "converter",
+  package: "Tool",
   description: "Convert media to URL (upload to Rabbit server)",
 })(async (message) => {
   try {
