@@ -205,7 +205,7 @@ Module({ on: "text" })(async (message) => {
 Object.keys(reactions).forEach((reactionName) => {
   Module({
     command: reactionName,
-    package: "reactions",
+    package: "fun",
     description: `Send ${reactionName} reaction GIF`,
   })(async (message, match) => {
     const reactionType = reactions[reactionName];
