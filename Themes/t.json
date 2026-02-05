@@ -4,12 +4,12 @@
     "isBotAdmin": "Garfield",
     "fromMe": "only bot use",
     "isfromMe": "_Only bot owner can use this command._",
-    "botName": "Garfield",
-    "owner": "Diegoson",
-    "image": "https://files.catbox.moe/lq7nwm.jpg",
+    "botName": "inconnu",
+    "owner": "inconnu",
+    "image": "https://i.postimg.cc/XvsZgKCb/IMG-20250731-WA0527.jpg",
     "other": {
       "connected": "✅ Garfield bot has connected",
-      "footer": "© Garfield Bot",
+      "footer": "© inconnu Bot",
       "error": "an error occured gbot"
     }
 }
