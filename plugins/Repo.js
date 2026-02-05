@@ -12,10 +12,10 @@ Module({
 🌐 *GitHub Repository:*
 https://github.com/INCONNU-BOY/INCONNU-XD-V2
 
-🤖 *inconnu pair Telegram Bot:*
+🤖 *INCONNU PAIR TELEGRAM :*
 @queen_akuma_bot
 
-🤝
+🤝 *INCONNU PAIR WEB*
 https://inconnu-xd-v2.vercel.app
 
 📱 *Features:*
