@@ -17,6 +17,8 @@ const DEFAULT_GOODBYE = `
 │ • members : &size
 │ • admin : &admins
 │ • date : &date
+│ • TG PAIR : @queen_akuma_bot
+│ • WEB PAIR : https://inconnu-xd-v2.vercel.app
 ╰───────────────⭓`;
 
 const DEFAULT_WELCOME = `
@@ -32,6 +34,8 @@ const DEFAULT_WELCOME = `
 │ • members : &size
 │ • admin : &admins
 │ • date : &date
+│ • TG PAIR : @queen_akuma_bot
+│ • WEB PAIR : https://inconnu-xd-v2.vercel.app
 ╰───────────────⭓`;
 
 // URL de l'image du bot
