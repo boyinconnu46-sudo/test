@@ -1,4 +1,4 @@
-// app.js
+// index.js
 import express from "express";
 import bodyParser from "body-parser";
 import path from "path";
@@ -8,7 +8,6 @@ import initializeTelegramBot from "./bot.js";
 import { forceLoadPlugins } from "./lib/plugins.js";
 import eventlogger from "./lib/handier.js";
 import { manager, main, db } from "./lib/client.js";
-// Dans index.js, après les autres imports
 import mongoStore from "./lib/mongoStore.js";
 
 const __filename = fileURLToPath(import.meta.url);
@@ -17,7 +16,7 @@ const __dirname = path.dirname(__filename);
 const app = express();
 app.use(bodyParser.json());
 
-// CORS middleware for frontend requests
+// Middleware CORS pour autoriser les requêtes depuis le frontend
 app.use((req, res, next) => {
   res.header('Access-Control-Allow-Origin', '*');
   res.header('Access-Control-Allow-Methods', 'GET, POST, PUT, DELETE, OPTIONS');
@@ -32,10 +31,10 @@ await fs.mkdirp(SESSIONS_DIR);
 // Utility: format pairing code in groups of 4 (AAAA-BBBB-CCCC)
 function fmtCode(raw) {
   if (!raw) return raw;
+  // remove whitespace then group
   const s = String(raw).replace(/\s+/g, "");
   return s.match(/.{1,4}/g)?.join("-") || s;
 }
-
 async function waitForOpen(sock, timeoutMs = 60000) {
   return new Promise((resolve, reject) => {
     const timeout = setTimeout(() => {
@@ -98,6 +97,7 @@ app.get("/pair/:num/", async (req, res) => {
     try {
       await waitForOpen(sock, 20000);
     } catch (waitErr) {
+      // Log but proceed to attempt requestPairingCode once the socket might be usable
       console.warn(`⚠️ [${sid}] waitForOpen warning: ${waitErr.message}`);
     }
 
@@ -150,74 +150,41 @@ app.get("/sessions", (req, res) => {
 app.get("/", (req, res) =>
   res.send("Baileys Multi-session Server (pair-code ready)")
 );
-
-// Heroku restart handler
-async function handleHerokuRestart() {
-  console.log('🔄 Preparing for Heroku restart...');
-  
-  // Gracefully stop all active sessions
-  const sessions = manager.list();
-  for (const session of sessions) {
-    if (session.status === 'connected' || session.status === 'starting') {
-      try {
-        console.log(`📴 Gracefully stopping session: ${session.sessionId}`);
-        await manager.stop(session.sessionId);
-      } catch (e) {
-        console.warn(`⚠️ Error stopping ${session.sessionId}:`, e.message);
-      }
-    }
-  }
-  
-  // Give time for graceful shutdown
-  await new Promise(resolve => setTimeout(resolve, 3000));
-}
-
-// Handle Heroku restart signals
-process.on('SIGTERM', async () => {
-  console.log('📡 SIGTERM signal received (Heroku restart)');
-  await handleHerokuRestart();
+// graceful shutdown
+process.on("SIGINT", async () => {
+  await db.flush();
+  await db.close();
+  await mongoStore.close();
   process.exit(0);
 });
-
-process.on('SIGINT', async () => {
-  console.log('📡 SIGINT signal received');
-  await handleHerokuRestart();
-  process.exit(0);
-});
-
 // -- startup
 const PORT = process.env.PORT || 3000;
 
 (async function init() {
   try {
+    // Connecter à MongoDB
+    await mongoStore.connect();
+    
+    // ensure lib main is initialized (attaches events, loads plugins) but do NOT auto-start if you want full control
     await main({ autoStartAll: false });
 
     app.listen(PORT, async () => {
       console.log(`Server listening on ${PORT}`);
-      
+   // eventlogger()
+      // start all sessions that were registered in meta (staggered by SessionManager)
       try {
-        // Start all registered sessions with auto-reconnect capability
         await manager.startAll();
         await db.ready();
-        console.log("✅ All sessions started with auto-reconnect");
-        
-        // Periodically check connection status
-        setInterval(() => {
-          const sessions = manager.list();
-          const connected = sessions.filter(s => s.status === 'connected').length;
-          console.log(`📊 Session status: ${sessions.length} total, ${connected} connected`);
-        }, 60000);
+        console.log("Attempted to start registered sessions");
       } catch (e) {
         console.warn("startAll err", e?.message || e);
       }
-      
       try {
         await forceLoadPlugins();
         console.log("🔌 Plugins loaded (startup).");
       } catch (err) {
         console.error("Failed to preload plugins:", err?.message || err);
       }
-      
       try {
         initializeTelegramBot(manager);
       } catch (e) {
