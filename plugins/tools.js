@@ -462,7 +462,7 @@ Module({
   const isPublic = db.get(botNumber, key, true) === true;
 
   return message.send({
-    text: `⚙️ *Bot Mode*\n` +
+    text: `⚙️ *INCONNU XD Mode*\n` +
     `> Status: ${isPublic ? "🌍 PUBLIC" : "🔒 PRIVATE"}\n\n` +
     `*Usage:*\n` +
     `• mode public\n` +
