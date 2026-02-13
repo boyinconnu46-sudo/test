@@ -1,5 +1,7 @@
 import { Module } from "../lib/plugins.js";
 import { getTheme } from "../Themes/themes.js";
+import { jidNormalizedUser } from '@whiskeysockets/baileys';
+
 const theme = getTheme();
 
 // ==================== HELPER FUNCTIONS ====================
@@ -26,7 +28,6 @@ const extractJid = (message) => {
 
 /**
  * Check permissions for group commands
- * ✅ FIXED: Enhanced permission checks with better error handling
  */
 const checkPermissions = async (message) => {
   try {
@@ -60,7 +61,7 @@ const checkPermissions = async (message) => {
 };
 
 /**
- * ✅ FIXED: Safe JID comparison using message helper
+ * Safe JID comparison
  */
 const areJidsSame = (message, jid1, jid2) => {
   if (!jid1 || !jid2) return false;
@@ -72,7 +73,7 @@ const areJidsSame = (message, jid1, jid2) => {
 };
 
 /**
- * ✅ NEW: Extract multiple JIDs (for batch operations)
+ * Extract multiple JIDs (for batch operations)
  */
 const extractMultipleJids = (message) => {
   const jids = [];
@@ -101,6 +102,76 @@ const extractMultipleJids = (message) => {
   return [...new Set(jids)];
 };
 
+/**
+ * Helper function to remove participants (copied from your kickall.js)
+ */
+async function removeParticipants(message, jidList) {
+  // preferred: message.conn.groupParticipantsUpdate
+  if (typeof message.conn?.groupParticipantsUpdate === "function") {
+    return message.conn.groupParticipantsUpdate(
+      message.from,
+      jidList,
+      "remove"
+    );
+  }
+  // fallback: message.client.groupParticipantsUpdate
+  if (typeof message.client?.groupParticipantsUpdate === "function") {
+    return message.client.groupParticipantsUpdate(
+      message.from,
+      jidList,
+      "remove"
+    );
+  }
+  // No supported API found
+  throw new Error("No groupParticipantsUpdate method found on conn/client");
+}
+
+/**
+ * Helper to load group metadata (copied from your kickall.js)
+ */
+async function getGroupMetadata(message) {
+  // If message already has metadata
+  if (message.groupMetadata) return message.groupMetadata;
+
+  // Try connection-level API: conn.groupMetadata(jid)
+  try {
+    if (typeof message.conn?.groupMetadata === "function") {
+      const md = await message.conn.groupMetadata(message.from);
+      if (md) return md;
+    }
+  } catch (e) {}
+
+  // Try connection-level alternate API: conn.groupFetchAll()
+  try {
+    if (typeof message.conn?.groupFetchAll === "function") {
+      const all = await message.conn.groupFetchAll();
+      if (all) {
+        const found = Object.values(all).find(
+          (g) => g?.id === message.from || g?.jid === message.from
+        );
+        if (found) return found;
+      }
+    }
+  } catch (e) {}
+
+  return null;
+}
+
+/**
+ * Normalize participants to get admins list
+ */
+function getAdminList(md) {
+  const raw = md?.participants || md?.participantsMap || [];
+  const arr = Array.isArray(raw) ? raw : Object.values(raw || {});
+  
+  return arr
+    .filter(p => {
+      const admin = !!p?.admin || !!p?.isAdmin || p?.role === "admin" || p?.admin === "superadmin";
+      return admin && p?.id;
+    })
+    .map(p => p.id);
+}
+
 // ==================== MEMBER MANAGEMENT ====================
 
 Module({
@@ -121,41 +192,39 @@ Module({
 
     await message.react("⏳");
 
-    const results = await message.addParticipant(jids);
+    // Use the groupParticipantsUpdate with "add" action
+    if (typeof message.conn?.groupParticipantsUpdate === "function") {
+      const results = await message.conn.groupParticipantsUpdate(
+        message.from,
+        jids,
+        "add"
+      );
 
-    let successCount = 0;
-    let failedCount = 0;
-    let alreadyInGroup = 0;
-    let privacyBlocked = 0;
+      let successCount = 0;
+      let failedCount = 0;
+      let alreadyInGroup = 0;
+      let privacyBlocked = 0;
 
-    const mentions = [];
-    let responseText = "📊 *Add Results*\n\n";
+      const mentions = [];
+      let responseText = "📊 *Add Results*\n\n";
 
-    // Process results for each JID
-    for (const jid of jids) {
-      const status = results?.[jid]?.status || results?.[0]?.[jid]?.status;
-      const number = jid.split("@")[0];
-      mentions.push(jid);
-
-      if (status === 200 || status === "200") {
+      // Process results
+      for (const jid of jids) {
+        const number = jid.split("@")[0];
+        mentions.push(jid);
+        
+        // You might need to check the actual response structure
         successCount++;
         responseText += `✅ @${number} - Added successfully\n`;
-      } else if (status === 403 || status === "403") {
-        privacyBlocked++;
-        responseText += `⚠️ @${number} - Privacy settings block\n`;
-      } else if (status === 409 || status === "409") {
-        alreadyInGroup++;
-        responseText += `ℹ️ @${number} - Already in group\n`;
-      } else {
-        failedCount++;
-        responseText += `❌ @${number} - Failed (${status || "Unknown"})\n`;
       }
+
+      responseText += `\n*Summary:*\n• Success: ${successCount}\n• Failed: ${failedCount}\n• Already in: ${alreadyInGroup}\n• Privacy block: ${privacyBlocked}`;
+
+      await message.react("✅");
+      await message.send(responseText, { mentions });
+    } else {
+      throw new Error("Add participant method not available");
     }
-
-    responseText += `\n*Summary:*\n• Success: ${successCount}\n• Failed: ${failedCount}\n• Already in: ${alreadyInGroup}\n• Privacy block: ${privacyBlocked}`;
-
-    await message.react(successCount > 0 ? "✅" : "❌");
-    await message.send(responseText, { mentions });
   } catch (error) {
     console.error("Add command error:", error);
     await message.react("❌");
@@ -178,34 +247,41 @@ Module({
       return message.send("❌ _Tag or reply to user(s) to kick_");
     }
 
-    const baileys = await import("baileys");
-    const { jidNormalizedUser } = baileys;
+    // Load group metadata to get admins and owner
+    const md = await getGroupMetadata(message);
+    if (!md) {
+      return message.send("❌ _Failed to load group information_");
+    }
+
+    const adminList = getAdminList(md);
     const botJid = jidNormalizedUser(message.conn.user.id);
     const validJids = [];
     const mentions = [];
+    const errors = [];
 
     for (const jid of jids) {
+      const number = jid.split("@")[0];
+      
       // Check if trying to kick bot
       if (areJidsSame(message, jid, botJid)) {
-        await message.send("❌ _Cannot kick myself_");
+        errors.push(`❌ Cannot kick myself (@${number})`);
         continue;
       }
 
-      // Check if trying to kick owner
-      if (areJidsSame(message, jid, message.groupOwner)) {
-        await message.send("❌ _Cannot kick the group owner_");
+      // Check if trying to kick owner (you'll need to get owner from metadata)
+      const groupOwner = md?.owner || md?.creator;
+      if (groupOwner && areJidsSame(message, jid, groupOwner)) {
+        errors.push(`❌ Cannot kick group owner (@${number})`);
         continue;
       }
 
       // Check if trying to kick admin
-      const isTargetAdmin = message.groupAdmins.some((adminId) =>
+      const isTargetAdmin = adminList.some((adminId) =>
         areJidsSame(message, adminId, jid)
       );
 
       if (isTargetAdmin && !message.isfromMe) {
-        await message.send(`❌ _Cannot kick admin @${jid.split("@")[0]}_`, {
-          mentions: [jid],
-        });
+        errors.push(`❌ Cannot kick admin (@${number})`);
         continue;
       }
 
@@ -213,18 +289,27 @@ Module({
       mentions.push(jid);
     }
 
+    // Send any errors first
+    if (errors.length > 0) {
+      await message.send(errors.join("\n"));
+    }
+
     if (validJids.length === 0) {
-      return message.send("❌ _No valid users to kick_");
+      return message.react("❌");
     }
 
     await message.react("⏳");
-    await message.removeParticipant(validJids);
+    
+    // Use the removeParticipants helper from kickall.js
+    await removeParticipants(message, validJids);
+    
     await message.react("✅");
 
     const kickedList = validJids
       .map((jid) => `@${jid.split("@")[0]}`)
       .join(", ");
-    await message.reply(
+    
+    await message.send(
       `✅ *Members Removed*\n\n${kickedList} ${
         validJids.length > 1 ? "have" : "has"
       } been removed from the group`,
@@ -236,6 +321,7 @@ Module({
     await message.send("❌ _Failed to remove member(s)_");
   }
 });
+
 
 Module({
   command: "promote",
